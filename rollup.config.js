@@ -5,8 +5,9 @@ import replace from '@rollup/plugin-replace';
 import typescript from '@rollup/plugin-typescript';
 import { defineConfig } from 'rollup';
 import importAssets from 'rollup-plugin-import-assets';
+import globals from 'rollup-plugin-node-globals';
 
-import { name } from "./plugin.json";
+import { name } from './plugin.json';
 
 export default defineConfig({
   input: './src/index.tsx',
@@ -15,13 +16,14 @@ export default defineConfig({
     nodeResolve(),
     typescript(),
     json(),
+    globals(),
     replace({
       preventAssignment: false,
       'process.env.NODE_ENV': JSON.stringify('production'),
     }),
     importAssets({
-      publicPath: `http://127.0.0.1:1337/plugins/${name}/`
-    })
+      publicPath: `http://127.0.0.1:1337/plugins/${name}/`,
+    }),
   ],
   context: 'window',
   external: ['react', 'react-dom'],

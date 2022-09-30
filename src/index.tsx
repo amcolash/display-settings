@@ -1,142 +1,114 @@
-import {
-  ButtonItem,
-  definePlugin,
-  DialogButton,
-  Menu,
-  MenuItem,
-  PanelSection,
-  PanelSectionRow,
-  Router,
-  ServerAPI,
-  showContextMenu,
-  staticClasses,
-} from 'decky-frontend-lib';
-import { VFC } from 'react';
+import { definePlugin, Dropdown, Field, PanelSection, PanelSectionRow, ServerAPI, staticClasses } from 'decky-frontend-lib';
+import { useEffect, useState, VFC } from 'react';
 import { FaShip } from 'react-icons/fa';
+import { ErrorBoundary } from 'react-error-boundary';
 
-import logo from '../assets/logo.png';
+import xrandrParser, { Screens } from 'xrandr';
 
-interface AddMethodArgs {
-  left: number;
-  right: number;
+const internal = 'eDP';
+
+function setIntervalImmediately(func: () => any, interval: number) {
+  func();
+  return setInterval(func, interval);
+}
+
+function ErrorFallback() {
+  return (
+    <div role="alert">
+      <p>Something went wrong:</p>
+    </div>
+  );
 }
 
 const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
-  // const [result, setResult] = useState<number | undefined>();
+  const [screens, setScreens] = useState<Screens>({});
+  const [counter, setCounter] = useState(0);
 
-  // const onClick = async () => {
-  //   const result = await serverAPI.callPluginMethod<AddMethodArgs, number>(
-  //     "add",
-  //     {
-  //       left: 2,
-  //       right: 2,
-  //     }
-  //   );
-  //   if (result.success) {
-  //     setResult(result.result);
-  //   }
-  // };
+  useEffect(() => {
+    setScreens({});
+
+    serverAPI
+      .callPluginMethod<{ args: string }, string>('xrandr', { args: '-q' })
+      .then((result) => {
+        if (!result.success) throw 'Error updating screens';
+        setScreens(xrandrParser(result.result));
+      })
+      .catch((err) => {
+        serverAPI.toaster.toast({ title: 'Displays', body: `Failed\n${err}` });
+      });
+  }, [counter, setScreens]);
+
+  // Update screens on start
+  useEffect(() => {
+    setCounter(counter + 1);
+  }, []);
 
   return (
-    <PanelSection title="Panel Section">
-      {/* <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={(e) =>
-            showContextMenu(
-              <Menu label="Menu" cancelText="CAAAANCEL" onCancel={() => {}}>
-                <MenuItem onSelected={() => {}}>Item #1</MenuItem>
-                <MenuItem onSelected={() => {}}>Item #2</MenuItem>
-                <MenuItem onSelected={() => {}}>Item #3</MenuItem>
-              </Menu>,
-              e.currentTarget ?? window
-            )
-          }
-        >
-          Server says yolo
-        </ButtonItem>
-      </PanelSectionRow> */}
+    <PanelSection title="Connected Displays" spinner={Object.keys(screens).length === 0}>
+      {Object.entries(screens || [])
+        .filter((s) => s[1].connected)
+        .map((s) => {
+          const options = [
+            { data: { screen: s[0], index: 0 }, label: 'Off' },
+            ...s[1].modes.map((m, i) => {
+              // Flip 800x1200 so it reads 1200x800
+              const flipHW = s[0] === internal && m.width === 800 && m.height === 1280;
+              const width = flipHW ? m.height : m.width;
+              const height = flipHW ? m.width : m.height;
 
-      <PanelSectionRow>
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <img src={logo} />
-        </div>
-      </PanelSectionRow>
+              return {
+                data: { screen: s[0], mode: m, index: i + 1 },
+                label: `${width}x${height} @ ${m.rate}hz ${m.native ? '[Default]' : ''}`,
+              };
+            }),
+          ];
 
-      <PanelSectionRow>
-        {/* <ButtonItem
-          layout="below"
-          onClick={async () => {
-            Router.CloseSideMenus();
-            Router.Navigate('/decky-plugin-test');
-          }}
-        >
-          Router
-        </ButtonItem> */}
+          const current = s[1].modes.findIndex((m) => m.current);
+          const selected = current > -1 ? current + 1 : 0;
+          const name = s[0].replace(internal, 'Internal Display');
 
-        <ButtonItem
-          layout="below"
-          onClick={async () => {
-            const result = await serverAPI.callPluginMethod<AddMethodArgs, number>('add', {
-              left: 2,
-              right: 5,
-            });
-            if (result.success) {
-              serverAPI.toaster.toast({ title: 'Add', body: result.result });
-            }
-          }}
-        >
-          TEST
-        </ButtonItem>
-      </PanelSectionRow>
+          return (
+            <PanelSectionRow>
+              <Field label={name} style={{ display: 'flex', flexDirection: 'column' }}>
+                <Dropdown
+                  selectedOption={0}
+                  rgOptions={options}
+                  renderButtonValue={() => options[selected]?.label.replace('[Default]', '')}
+                  onChange={(data) => {
+                    const screen = data.data.screen;
+                    const mode = data.data.mode;
+
+                    if (data.data.index === 0) {
+                      const args = `--output ${screen} --off`;
+                      serverAPI
+                        .callPluginMethod<{ args: string }, string>('xrandr', { args })
+                        .catch((err) => serverAPI.toaster.toast({ title: 'Displays', body: `Failed\n${err}` }));
+                      // .finally(() => setCounter(counter + 1));
+                    } else {
+                      const args = `--output ${screen} --mode ${mode.width}x${mode.height} ${screen === internal ? '--rotate right' : ''}`;
+                      serverAPI
+                        .callPluginMethod<{ args: string }, string>('xrandr', { args })
+                        .catch((err) => serverAPI.toaster.toast({ title: 'Displays', body: `Failed\n${err}` }));
+                      // .finally(() => setCounter(counter + 1));
+                    }
+                  }}
+                />
+              </Field>
+            </PanelSectionRow>
+          );
+        })}
     </PanelSection>
   );
 };
 
-// const DeckyPluginRouterTest: VFC = () => {
-//   return (
-//     <div style={{ marginTop: '50px', color: 'white' }}>
-//       Hello World!
-//       <DialogButton onClick={() => Router.NavigateToStore()}>Go to Store</DialogButton>
-//     </div>
-//   );
-// };
-
 export default definePlugin((serverApi: ServerAPI) => {
-  // const EdidReader = require('edid-reader');
-  // const edidReader = new EdidReader();
-
-  // let data = '';
-  // edidReader.scan().then(() => {
-  //   data += '==========================';
-  //   edidReader.monitors.forEach((monitor: any) => {
-  //     data += `Vendor : ${monitor.vendor}`;
-  //     data += `Model  : ${monitor.modelName}`;
-  //     data += `EISA   : ${monitor.eisaId}`;
-  //     data += `Code   : ${monitor.productCode}`;
-  //     data += `Serial : ${monitor.serialNumber}`;
-  //     data += '==========================';
-  //   });
-
-  //   log(data, serverApi);
-  // });
-
-  // serverApi.routerHook.addRoute('/decky-plugin-test', DeckyPluginRouterTest, {
-  //   exact: true,
-  // });
-
   return {
-    title: <div className={staticClasses.Title}>Example Plugin</div>,
-    content: <Content serverAPI={serverApi} />,
+    title: <div className={staticClasses.Title}>Display Settings</div>,
+    content: (
+      <ErrorBoundary FallbackComponent={ErrorFallback}>
+        <Content serverAPI={serverApi} />
+      </ErrorBoundary>
+    ),
     icon: <FaShip />,
-    onDismount() {
-      serverApi.routerHook.removeRoute('/decky-plugin-test');
-    },
   };
 });
-
-// function log(data: string, serverApi: ServerAPI) {
-//   return serverApi.callPluginMethod<{ data: string }>('log', {
-//     data,
-//   });
-// }
